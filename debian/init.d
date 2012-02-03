@@ -24,8 +24,6 @@ test -f $DAEMON || exit 0
 
 . /lib/lsb/init-functions
 
-ulimit -n 65535
-
 # Check if pound is configured or not
 if [ -f "/etc/default/pound" ]
 then

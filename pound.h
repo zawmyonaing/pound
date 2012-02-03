@@ -182,7 +182,7 @@
 #if HAVE_LIBPCREPOSIX
 #if HAVE_PCREPOSIX_H
 #include    <pcreposix.h>
-#elif HAVE_PCRE_PCREPOSIX
+#elif HAVE_PCRE_PCREPOSIX_H
 #include    <pcre/pcreposix.h>
 #else
 #error "You have libpcreposix, but the header files are missing. Use --disable-pcreposix"
@@ -231,8 +231,28 @@
 #include    <varargs.h>
 #endif
 
+#if HAVE_FNMATCH_H
+#include    <fnmatch.h>
+#else
+#error "Pound needs fnmatch.h"
+#endif
+
 #ifndef __STDC__
 #define const
+#endif
+
+#ifdef  HAVE_LONG_LONG_INT
+#define LONG    long long
+#define L0      0LL
+#define L_1     -1LL
+#define STRTOL  strtoll
+#define ATOL    atoll
+#else
+#define LONG    long
+#define L0      0L
+#define L_1     -1L
+#define STRTOL  strtol
+#define ATOL    atol
 #endif
 
 #ifndef NO_EXTERNALS
@@ -246,7 +266,8 @@ extern char *user,              /* user to run as */
             *pid_name,          /* file to record pid in */
             *ctrl_name;         /* control socket name */
 
-extern int  alive_to,           /* check interval for resurrection */
+extern int  numthreads,         /* number of worker threads */
+            alive_to,           /* check interval for resurrection */
             daemonize,          /* run as daemon */
             log_facility,       /* log facility to use */
             print_log,          /* print log messages to stdout/stderr */
@@ -322,6 +343,10 @@ typedef struct _tn {
 /* maximal session key size */
 #define KEY_SIZE    127
 
+#if OPENSSL_VERSION_NUMBER >= 0x10000000L
+DECLARE_LHASH_OF(TABNODE);
+#endif
+
 /* service definition */
 typedef struct _service {
     char                name[KEY_SIZE + 1]; /* symbolic name */
@@ -337,7 +362,11 @@ typedef struct _service {
     int                 sess_ttl;   /* session time-to-live */
     regex_t             sess_start; /* pattern to identify the session data */
     regex_t             sess_pat;   /* pattern to match the session data */
+#if OPENSSL_VERSION_NUMBER >= 0x10000000L
+    LHASH_OF(TABNODE)   *sessions;  /* currently active sessions */
+#else
     LHASH               *sessions;  /* currently active sessions */
+#endif
     int                 dynscale;   /* true if the back-ends should be dynamically rescaled */
     int                 disabled;   /* true if the service is disabled */
     struct _service     *next;
@@ -347,28 +376,34 @@ typedef struct _service {
 extern SERVICE          *services;  /* global services (if any) */
 #endif /* NO_EXTERNALS */
 
+typedef struct _pound_ctx {
+    SSL_CTX             *ctx;
+    char                *server_name;
+    struct _pound_ctx   *next;
+} POUND_CTX;
+
 /* Listener definition */
 typedef struct _listener {
-    struct addrinfo     addr;       /* IPv4/6 address */
-    int                 sock;       /* listening socket */
-    SSL_CTX             *ctx;       /* CTX for SSL connections */
-    int                 clnt_check; /* client verification mode */
-    int                 noHTTPS11;  /* HTTP 1.1 mode for SSL */
-    char                *add_head;  /* extra SSL header */
-    regex_t             verb;       /* pattern to match the request verb against */
-    int                 to;         /* client time-out */
-    int                 has_pat;    /* was a URL pattern defined? */
-    regex_t             url_pat;    /* pattern to match the request URL against */
-    char                *err414,    /* error messages */
+    struct addrinfo     addr;           /* IPv4/6 address */
+    int                 sock;           /* listening socket */
+    POUND_CTX           *ctx;           /* CTX for SSL connections */
+    int                 clnt_check;     /* client verification mode */
+    int                 noHTTPS11;      /* HTTP 1.1 mode for SSL */
+    char                *add_head;      /* extra SSL header */
+    regex_t             verb;           /* pattern to match the request verb against */
+    int                 to;             /* client time-out */
+    int                 has_pat;        /* was a URL pattern defined? */
+    regex_t             url_pat;        /* pattern to match the request URL against */
+    char                *err414,        /* error messages */
                         *err500,
                         *err501,
                         *err503;
-    long                max_req;    /* max. request size */
-    MATCHER             *head_off;  /* headers to remove */
-    int                 rewr_loc;   /* rewrite location response */
-    int                 rewr_dest;  /* rewrite destination header */
-    int                 disabled;   /* true if the listener is disabled */
-    int                 log_level;  /* log level for this listener */
+    LONG                max_req;        /* max. request size */
+    MATCHER             *head_off;      /* headers to remove */
+    int                 rewr_loc;       /* rewrite location response */
+    int                 rewr_dest;      /* rewrite destination header */
+    int                 disabled;       /* true if the listener is disabled */
+    int                 log_level;      /* log level for this listener */
     SERVICE             *services;
     struct _listener    *next;
 }   LISTENER;
@@ -377,10 +412,11 @@ typedef struct _listener {
 extern LISTENER         *listeners; /* all available listeners */
 #endif /* NO_EXTERNALS */
 
-typedef struct  {
+typedef struct _thr_arg {
     int             sock;
     LISTENER        *lstn;
     struct addrinfo from_host;
+    struct _thr_arg *next;
 }   thr_arg;                        /* argument to processing threads: socket, origin */
 
 /* Header types */
@@ -430,6 +466,16 @@ typedef u_int32_t   time_t;
 #endif
 
 /*
+ * add a request to the queue
+ */
+extern int  put_thr_arg(thr_arg *);
+
+/*
+ * get a request from the queue
+ */
+extern thr_arg  *get_thr_arg(void);
+
+/*
  * handle an HTTP request
  */
 extern void *thr_http(void *);
@@ -438,6 +484,11 @@ extern void *thr_http(void *);
  * Log an error to the syslog or to stderr
  */
 extern void logmsg(const int, const char *, ...);
+
+/*
+ * Parse a URL, possibly decoding hexadecimal-encoded characters
+ */
+extern int cpURL(char *, char *, int);
 
 /*
  * Translate inet/inet6 address into a string
@@ -470,7 +521,7 @@ extern int  get_host(char *const, struct addrinfo *);
  * (1) if the redirect was done to the correct location with the wrong protocol
  * (2) if the redirect was done to the back-end rather than the listener
  */
-extern int  need_rewrite(const int, char *const, char *const, const LISTENER *, const BACKEND *);
+extern int  need_rewrite(const int, char *const, char *const, const char *, const LISTENER *, const BACKEND *);
 /*
  * (for cookies only) possibly create session based on response headers
  */

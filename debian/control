@@ -3,7 +3,7 @@ Section: net
 Priority: extra
 Maintainer: Martin Meredith <mez@debian.org>
 Build-Depends: debhelper (>= 7), libssl-dev (>= 0.9.7), autotools-dev, libpcre3-dev, openssl
-Standards-Version: 3.8.4
+Standards-Version: 3.9.2
 Homepage: http://www.apsis.ch/pound/
 
 Package: pound

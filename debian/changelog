@@ -1,11 +1,32 @@
-pound (2.5-1we7squeeze1) lucid; urgency=low
-  * Forwardport the we7 changes as follows:
-  * build with max buffers of 8192
-  * fix poundctl pathing by wrapping poundctl
-  * increase file count limit to 65535
+pound (2.6-2) unstable; urgency=low
 
+  * Update anti_beast patch
+     - Actually authored by Joe Gooch <mrwizard@k12system.com>
+     - Fix segfault on some systems
+  * Added patch to fix XSS redirect vulnerability
+    - Patch from Joe Gooch <mrwizard@k12system.com>
+  * Switched to dpkg-buildflags (Closes: #654833)
+     - Patch from Moritz Muehlenhoff <jmm@debian.org>
 
- -- stuart <stuart@daedalus.we7.local>  Fri, 03 Feb 2012 15:48:02 +0000
+ -- Martin Meredith <mez@debian.org>  Fri, 03 Feb 2012 09:40:45 +0000
+
+pound (2.6-1) unstable; urgency=low
+
+  * New upstream release
+  * Patch from Michal Jirku <box@wejn.org> to add config
+    options that prevent BEAST/renegotiation attacks
+
+ -- Martin Meredith <mez@debian.org>  Mon, 30 Jan 2012 10:21:52 +0000
+
+pound (2.5-1.1) unstable; urgency=low
+
+  * NMU
+  * Apply patch to work with new openssl. Thanks to Ilya Barygin
+    <barygin@gmail.com> for the patch. Closes: #622041
+  * Add simple initial build-arch and build-indep rules as suggested by
+    lintian
+
+ -- Steve McIntyre <steve.mcintyre@linaro.org>  Thu, 12 Dec 2011 15:29:12 +0000
 
 pound (2.5-1) unstable; urgency=low
 
