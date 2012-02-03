@@ -1,0 +1,60 @@
+Description: Upstream changes introduced in version 2.5-1we7squeeze1
+ This patch has been created by dpkg-source during the package build.
+ Here's the last changelog entry, hopefully it gives details on why
+ those changes were made:
+ .
+ pound (2.5-1we7squeeze1) lucid; urgency=low
+ .
+   * Forwardport the we7 changes as follows:
+   * build with max buffers of 8192
+   * fix poundctl pathing by wrapping poundctl
+   * increase file count limit to 65535
+ .
+ The person named in the Author field signed this changelog entry.
+Author: stuart <stuart@daedalus.we7.local>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: http://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: <YYYY-MM-DD>
+
+--- /dev/null
++++ pound-2.5/poundctl
+@@ -0,0 +1,3 @@
++#!/bin/sh
++
++/usr/sbin/poundctl.bin -c /var/run/pound-socket $*
+--- pound-2.5.orig/Makefile.in
++++ pound-2.5/Makefile.in
+@@ -52,7 +52,7 @@ pound:	$(OBJS)
+ 		${CC} @LDFLAGS@ -o pound $(OBJS) $(LIBS)
+ 
+ poundctl:	poundctl.o
+-		${CC} @LDFLAGS@ -o poundctl poundctl.o $(LIBS)
++		${CC} @LDFLAGS@ -o poundctl.bin poundctl.o $(LIBS)
+ 
+ dh512.h:
+ 		openssl dhparam -5 -C -noout 512 > dh512.h
+@@ -69,12 +69,13 @@ install:	all
+ 		@INSTALL@ -d ${DESTDIR}@sbindir@
+ 		@INSTALL@ -o @I_OWNER@ -g @I_GRP@ -m 555 pound ${DESTDIR}@sbindir@/pound
+ 		@INSTALL@ -o @I_OWNER@ -g @I_GRP@ -m 555 poundctl ${DESTDIR}@sbindir@/poundctl
++		@INSTALL@ -o @I_OWNER@ -g @I_GRP@ -m 555 poundctl.bin ${DESTDIR}@sbindir@/poundctl.bin
+ 		@INSTALL@ -d ${DESTDIR}@mandir@/man8
+ 		@INSTALL@ -o @I_OWNER@ -g @I_GRP@ -m 644 pound.8 ${DESTDIR}@mandir@/man8/pound.8
+ 		@INSTALL@ -o @I_OWNER@ -g @I_GRP@ -m 644 poundctl.8 ${DESTDIR}@mandir@/man8/poundctl.8
+ 
+ clean:
+-		rm -f pound $(OBJS) poundctl poundctl.o
++		rm -f pound $(OBJS) poundctl.bin poundctl.o
+ 		rm -f dh512.h dh1024.h
+ 
+ distclean:	clean
