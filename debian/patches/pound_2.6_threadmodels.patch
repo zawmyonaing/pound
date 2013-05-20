@@ -47,7 +47,7 @@ Implement a config option for pool (2.6 behavior) vs dynamic (2.5 behavior)
      ctrl_name = NULL;
  
      numthreads = 128;
-+    threadpool = 1;
++    threadpool = 0;
      alive_to = 30;
      daemonize = 1;
      grace = 30;
