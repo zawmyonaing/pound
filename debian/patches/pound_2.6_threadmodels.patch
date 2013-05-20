@@ -1,0 +1,246 @@
+From 901d2188d86dcaf026c0bd0a996b33aee21b363d Mon Sep 17 00:00:00 2001
+From: Joe Gooch <mrwizard@k12system.com>
+Date: Mon, 19 Mar 2012 10:58:34 -0400
+Subject: ThreadModel implementation
+
+Implement a config option for pool (2.6 behavior) vs dynamic (2.5 behavior)
+---
+ config.c |    7 ++++++-
+ http.c   |    9 +++++++++
+ pound.8  |   13 +++++++++++++
+ pound.c  |   60 +++++++++++++++++++++++++++++++++++++++++-------------------
+ pound.h  |    2 ++
+ 5 files changed, 71 insertions(+), 20 deletions(-)
+
+diff --git a/config.c b/config.c
+index 1294d84..ee9399a 100755
+--- a/config.c
++++ b/config.c
+@@ -77,7 +77,7 @@ static regex_t  Err414, Err500, Err501, Err503, MaxRequest, HeadRemove, RewriteL
+ static regex_t  Service, ServiceName, URL, HeadRequire, HeadDeny, BackEnd, Emergency, Priority, HAport, HAportAddr;
+ static regex_t  Redirect, RedirectN, TimeOut, Session, Type, TTL, ID, DynScale;
+ static regex_t  ClientCert, AddHeader, Ciphers, CAlist, VerifyList, CRLlist, NoHTTPS11;
+-static regex_t  Grace, Include, ConnTO, IgnoreCase, HTTPS, HTTPSCert, Disabled, Threads, CNName;
++static regex_t  Grace, Include, ConnTO, IgnoreCase, HTTPS, HTTPSCert, Disabled, Threads, ThreadModel, CNName;
+ 
+ static regmatch_t   matches[5];
+ 
+@@ -1155,6 +1155,8 @@ parse_file(void)
+             daemonize = atoi(lin + matches[1].rm_so);
+         } else if(!regexec(&Threads, lin, 4, matches, 0)) {
+             numthreads = atoi(lin + matches[1].rm_so);
++        } else if(!regexec(&ThreadModel, lin, 4, matches, 0)) {
++            threadpool = ((lin[matches[1].rm_so]|0x20) == 'p'); /* 'pool' */
+         } else if(!regexec(&LogFacility, lin, 4, matches, 0)) {
+             lin[matches[1].rm_eo] = '\0';
+             if(lin[matches[1].rm_so] == '-')
+@@ -1262,6 +1264,7 @@ config_parse(const int argc, char **const argv)
+     || regcomp(&RootJail, "^[ \t]*RootJail[ \t]+\"(.+)\"[ \t]*$", REG_ICASE | REG_NEWLINE | REG_EXTENDED)
+     || regcomp(&Daemon, "^[ \t]*Daemon[ \t]+([01])[ \t]*$", REG_ICASE | REG_NEWLINE | REG_EXTENDED)
+     || regcomp(&Threads, "^[ \t]*Threads[ \t]+([1-9][0-9]*)[ \t]*$", REG_ICASE | REG_NEWLINE | REG_EXTENDED)
++    || regcomp(&ThreadModel, "^[ \t]*ThreadModel[ \t]+(pool|dynamic)[ \t]*$", REG_ICASE | REG_NEWLINE | REG_EXTENDED)
+     || regcomp(&LogFacility, "^[ \t]*LogFacility[ \t]+([a-z0-9-]+)[ \t]*$", REG_ICASE | REG_NEWLINE | REG_EXTENDED)
+     || regcomp(&LogLevel, "^[ \t]*LogLevel[ \t]+([0-5])[ \t]*$", REG_ICASE | REG_NEWLINE | REG_EXTENDED)
+     || regcomp(&Grace, "^[ \t]*Grace[ \t]+([0-9]+)[ \t]*$", REG_ICASE | REG_NEWLINE | REG_EXTENDED)
+@@ -1394,6 +1397,7 @@ config_parse(const int argc, char **const argv)
+     ctrl_name = NULL;
+ 
+     numthreads = 128;
++    threadpool = 1;
+     alive_to = 30;
+     daemonize = 1;
+     grace = 30;
+@@ -1420,6 +1424,7 @@ config_parse(const int argc, char **const argv)
+     regfree(&RootJail);
+     regfree(&Daemon);
+     regfree(&Threads);
++    regfree(&ThreadModel);
+     regfree(&LogFacility);
+     regfree(&LogLevel);
+     regfree(&Grace);
+diff --git a/http.c b/http.c
+index bb2ce8b..84b60a4 100755
+--- a/http.c
++++ b/http.c
+@@ -1566,6 +1566,15 @@ thr_http(void *dummy)
+ {
+     thr_arg *arg;
+ 
++    if (dummy!=NULL) {
++        arg = (thr_arg *)dummy;
++        if (arg == NULL) {
++            logmsg(LOG_WARNING, "NULL get_thr_arg");
++            return;
++        }
++        do_http(arg);
++        return;
++    }
+     for(;;) {
+         while((arg = get_thr_arg()) == NULL)
+             logmsg(LOG_WARNING, "NULL get_thr_arg");
+diff --git a/pound.8 b/pound.8
+index f878a4d..21e63f8 100755
+--- a/pound.8
++++ b/pound.8
+@@ -222,6 +222,19 @@ puts itself in the background). By specifying this option you can force
+ to work like a regular process. Useful for debugging or if you want to
+ use something like \fIdaemontools\fR.
+ .TP
++\fBThreadModel\fR [pool|dynamic]
++If set to pool, 
++.B Pound
++will spawn 
++\fBThreads\fR
++number of threads when it starts and reuse those threads throughout its
++lifetime.  This sets a hard limit on the number of concurrent requests
++that can be processed.
++If set to dynamic, a new thread is spawned for each and every request.
++This means you have a penalty for thread creation on every request, and
++possibility of DoS if too many requests come in, but it also means your
++thread count will scale up and down as necessary.
++.TP
+ \fBThreads\fR nnn
+ How many worker threads
+ .B Pound
+diff --git a/pound.c b/pound.c
+index 9667dcd..1d0bb2c 100755
+--- a/pound.c
++++ b/pound.c
+@@ -110,7 +110,7 @@ l_id(void)
+ static thr_arg          *first = NULL, *last = NULL;
+ static pthread_cond_t   arg_cond;
+ static pthread_mutex_t  arg_mut;
+-int                     numthreads;
++int                     numthreads, threadpool;
+ 
+ static void
+ init_thr_arg(void)
+@@ -120,20 +120,29 @@ init_thr_arg(void)
+     return;
+ }
+ 
+-/*
+- * add a request to the queue
+- */
+-int
+-put_thr_arg(thr_arg *arg)
++thr_arg *
++get_dyn_thr_arg(thr_arg *arg)
+ {
+     thr_arg *res;
+ 
+     if((res = malloc(sizeof(thr_arg))) == NULL) {
+         logmsg(LOG_WARNING, "thr_arg malloc");
+-        return -1;
++        return NULL;
+     }
+     memcpy(res, arg, sizeof(thr_arg));
+     res->next = NULL;
++    return res;
++}
++
++/*
++ * add a request to the queue
++ */
++int
++put_thr_arg(thr_arg *arg)
++{
++    thr_arg *res;
++    if ((res = get_dyn_thr_arg(arg))==NULL)
++        return -1;
+     (void)pthread_mutex_lock(&arg_mut);
+     if(last == NULL)
+         first = last = res;
+@@ -142,7 +151,7 @@ put_thr_arg(thr_arg *arg)
+         last = last->next;
+     }
+     (void)pthread_mutex_unlock(&arg_mut);
+-    pthread_cond_signal(&arg_cond);
++    if (threadpool) pthread_cond_signal(&arg_cond);
+     return 0;
+ }
+ 
+@@ -155,13 +164,13 @@ get_thr_arg(void)
+     thr_arg *res;
+ 
+     (void)pthread_mutex_lock(&arg_mut);
+-    if(first == NULL)
++    if(threadpool && first == NULL)
+         (void)pthread_cond_wait(&arg_cond, &arg_mut);
+     if((res = first) != NULL)
+         if((first = first->next) == NULL)
+             last = NULL;
+     (void)pthread_mutex_unlock(&arg_mut);
+-    if(first != NULL)
++    if(threadpool && first != NULL)
+         pthread_cond_signal(&arg_cond);
+     return res;
+ }
+@@ -441,12 +450,14 @@ main(const int argc, char **argv)
+             /* pause to make sure the service threads were started */
+             sleep(1);
+ 
+-            /* create the worker threads */
+-            for(i = 0; i < numthreads; i++)
+-                if(pthread_create(&thr, &attr, thr_http, NULL)) {
+-                    logmsg(LOG_ERR, "create thr_http: %s - aborted", strerror(errno));
+-                    exit(1);
+-                }
++            if (threadpool) {
++                /* create the worker threads */
++                for(i = 0; i < numthreads; i++)
++                    if(pthread_create(&thr, &attr, thr_http, NULL)) {
++                        logmsg(LOG_ERR, "create thr_http: %s - aborted", strerror(errno));
++                        exit(1);
++                    }
++            }
+ 
+             /* pause to make sure at least some of the worker threads were started */
+             sleep(1);
+@@ -481,7 +492,7 @@ main(const int argc, char **argv)
+                                 logmsg(LOG_WARNING, "HTTP accept: %s", strerror(errno));
+                             } else if(((struct sockaddr_in *)&clnt_addr)->sin_family == AF_INET
+                                    || ((struct sockaddr_in *)&clnt_addr)->sin_family == AF_INET6) {
+-                                thr_arg arg;
++                                thr_arg arg, *argp;
+ 
+                                 if(lstn->disabled) {
+                                     /*
+@@ -503,8 +514,19 @@ main(const int argc, char **argv)
+                                     arg.from_host.ai_family = AF_INET;
+                                 else
+                                     arg.from_host.ai_family = AF_INET6;
+-                                if(put_thr_arg(&arg))
+-                                    close(clnt);
++                                if(threadpool) {
++                                    if(put_thr_arg(&arg))
++                                        close(clnt);
++                                } else {
++                                    if((argp = get_dyn_thr_arg(&arg)) == NULL)
++                                        close(clnt);
++                                    else if(pthread_create(&thr, &attr, thr_http, (void*)argp)) {
++                                        logmsg(LOG_ERR, "create thr_http: %s - aborted", strerror(errno));
++                                        free(argp->from_host.ai_addr);
++                                        free(argp);
++                                        close(clnt);
++                                    }
++                                }
+                             } else {
+                                 /* may happen on FreeBSD, I am told */
+                                 logmsg(LOG_WARNING, "HTTP connection prematurely closed by peer");
+diff --git a/pound.h b/pound.h
+index 114db58..c945202 100755
+--- a/pound.h
++++ b/pound.h
+@@ -267,6 +267,8 @@ extern char *user,              /* user to run as */
+             *ctrl_name;         /* control socket name */
+ 
+ extern int  numthreads,         /* number of worker threads */
++            threadpool,         /* 1 to use a threadpool (i.e. 2.6 behavior)
++                                   0 to use new thread per request (2.5 behavior) */
+             alive_to,           /* check interval for resurrection */
+             daemonize,          /* run as daemon */
+             log_facility,       /* log facility to use */
+-- 
+1.7.4.1
+

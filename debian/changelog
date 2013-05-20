@@ -1,3 +1,10 @@
+pound (1:2.6-1we7) precise; urgency=low
+
+  * Import a patch to re-enable dyanmic threading support
+  * Bump the package epoch so that we are alway preferred 
+
+ -- tristan <tristan@haemon.we7.local>  Mon, 20 May 2013 10:30:09 +0100
+
 pound (2.6-2) unstable; urgency=low
 
   * Update anti_beast patch
