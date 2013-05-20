@@ -34,8 +34,8 @@ C_SUPER="@C_SUPER@"
 C_CERT1L="@C_CERT1L@"
 
 CFLAGS=-DF_CONF=\"$(F_CONF)\" -DVERSION=\"${VERSION}\" -DC_SSL=\"${C_SSL}\" -DC_T_RSA=\"${C_T_RSA}\" \
-	-DC_MAXBUF=\"${C_MAXBUF}\" -DC_OWNER=\"${C_OWNER}\" -DC_GROUP=\"${C_GROUP}\" -DC_SUPER=\"${C_SUPER}\" \
-	-DC_CERT1L=\"${C_CERT1L}\" @CFLAGS@ @PTHREAD_CFLAGS@ @CPPFLAGS@
+	-DC_MAXBUF=\"${C_MAXBUF}\" -DC_OWNER=\"${C_OWNER}\" -DC_GROUP=\"${C_GROUP}\" \
+    -DC_SUPER=\"${C_SUPER}\" -DC_CERT1L=\"${C_CERT1L}\" @CFLAGS@ @PTHREAD_CFLAGS@ @CPPFLAGS@
 LIBS=@LIBS@ @PTHREAD_LIBS@
 
 prefix=@prefix@
@@ -60,10 +60,10 @@ dh512.h:
 dh1024.h:
 		openssl dhparam -5 -C -noout 1024 > dh1024.h
 
-$(OBJS):	pound.h config.h
+$(OBJS) poundctl.o:	pound.h config.h
 
 svc.o:		svc.c dh512.h dh1024.h
-		gcc ${CFLAGS} -c -o svc.o svc.c
+		${CC} ${CFLAGS} -c -o svc.o svc.c
 
 install:	all
 		@INSTALL@ -d ${DESTDIR}@sbindir@
