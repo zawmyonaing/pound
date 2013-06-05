@@ -1,3 +1,9 @@
+pound (1:2.6-3+we7.wheezy.1) precise; urgency=low
+
+  * Add --with-maxbug 8192 as per the original config 
+
+ -- tristan <tristan@clonebase.we7.local>  Wed, 05 Jun 2013 14:46:09 +0100
+
 pound (1:2.6-2+we7.wheezy.1) precise; urgency=low
 
   * Import a patch to re-enable dyanmic threading support

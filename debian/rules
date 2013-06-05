@@ -18,7 +18,7 @@ config.status: configure
 	dh_testdir
 	mv config.sub config.sub.upstream && ln -s /usr/share/misc/config.sub
 	mv config.guess config.guess.upstream && ln -s /usr/share/misc/config.guess
-	./configure $(shell dpkg-buildflags --export=configure) --prefix=/usr --mandir=\$${prefix}/share/man --infodir=\$${prefix}/share/info --sysconfdir=/etc/pound
+	./configure $(shell dpkg-buildflags --export=configure) --prefix=/usr --mandir=\$${prefix}/share/man --infodir=\$${prefix}/share/info --sysconfdir=/etc/pound --with-maxbuf=8192
 	rm config.sub && mv config.sub.upstream config.sub
 	rm config.guess && mv config.guess.upstream config.guess
 
