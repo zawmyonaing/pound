@@ -1,3 +1,9 @@
+pound (1:2.6-4+we7.wheezy.1) precise; urgency=low
+
+  * re-add ulimit in the init script 
+
+ -- tristan <tristan@clonebase.we7.local>  Wed, 05 Jun 2013 14:59:12 +0100
+
 pound (1:2.6-3+we7.wheezy.1) precise; urgency=low
 
   * Add --with-maxbug 8192 as per the original config 
